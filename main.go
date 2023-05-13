@@ -132,31 +132,25 @@ func getCurrentVolume() float64 {
 
 	// Amixer output looks like this:
 	// Simple mixer control 'Master',0
-	// Capabilities: pvolume pswitch pswitch-joined
-	// Playback channels: Front Left - Front Right
-	// Limits: Playback 0 - 65536
-	// Mono:
-	// Front Left: Playback 37433 [57%] [on]
-	// Front Right: Playback 37433 [57%] [on]
+	// Capabilities: pvolume pvolume-joined pswitch pswitch-joined
+	// Playback channels: Mono
+	// Limits: Playback 0 - 87
+	// Mono: Playback 87 [100%] [0.00dB] [on]
 
-	re := regexp.MustCompile(`Front (Left|Right): Playback \d+ \[(\d+)%\] \[on\]`)
-	matches := re.FindAllStringSubmatch(string(out), -1)
+	re := regexp.MustCompile(`Mono: Playback (\d+)`)
+	match := re.FindStringSubmatch(string(out))
 
-	var currentVolume int
-	for _, match := range matches {
-
-		volume, err := strconv.Atoi(match[2])
+	if match != nil {
+		currentVolume, err := strconv.Atoi(match[1])
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		currentVolume += volume
+		fmt.Println(currentVolume)
+		return float64(currentVolume)
 	}
 
-	// Calculate the average volume between the left and right channels
-	currentVolume = currentVolume / len(matches)
-	fmt.Println(currentVolume)
-
-	return float64(currentVolume)
+	log.Fatal("Unable to find current volume")
+	return float64(0)
 }
