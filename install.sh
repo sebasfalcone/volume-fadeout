@@ -25,14 +25,19 @@ sudo mv start.sh "$programDirectory/"
 
 # Generate .desktop file
 desktopFile="[Desktop Entry]\n\
+Version=1.0\n\
+Comment=Music Fadeout utility
 Type=Application\n\
 Name=$programName\n\
 Icon=$programDirectory/icons/icon_100x100.png\n\
 Exec=$programDirectory/start.sh\n\
 Terminal=false\n\
+StartupNotify=true\n\
+NoDisplay=false\n\
 Categories=Utility;"
 
 echo -e $desktopFile > "$HOME/.local/share/applications/$programName.desktop"
+chmod +x "$HOME/.local/share/applications/$programName.desktop"
 
 sudo update-desktop-database
 

@@ -41,35 +41,31 @@ func main() {
 
 }
 
+// Load the configuration from the config file
 func loadConfigurations(config *Config) {
-	// Get the absolute path of the binary executable
-	exePath, err := os.Executable()
+	currentDir, err := os.Getwd()
+	log.Printf("Current directory: %s", currentDir)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Get the directory containing the executable
-	exeDir := filepath.Dir(exePath)
+	configPath := filepath.Join(currentDir, "configs", "config.json")
 
-	// Construct the relative path to the config file
-	configPath := filepath.Join(exeDir, "configs", "config.json")
-
-	// Open the configuration file
 	file, err := os.Open(configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer file.Close()
 
-	// Decode the JSON data
 	err = json.NewDecoder(file).Decode(config)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
+// Get the initial volume and start time
 func loadStatus(status *Status) {
-	status.initialVolume = getCurrentVolume()
+	status.initialVolume = getAverageVolume()
 	status.startTime = time.Now()
 }
 
@@ -93,21 +89,19 @@ func updateVolume(config Config, status Status) {
 	log.Printf("New Volume: %0.2f%%", newVolume)
 }
 
+// Finish the execution of the program, restoring the initial volume and pausing the music
 func finishExecution(status Status) {
 	log.Println("Fade out completed!")
 
-	// Pause music
-	// TODO: This is actually a toggle. It will start reproducing music if it's paused
-	_, err := exec.Command("xdotool", "key", "XF86AudioPlay").Output()
+	_, err := exec.Command("playerctl", "pause").Output()
 	if err != nil {
-		log.Fatal(err)
+		log.Panic("Unable to pause music: " + err.Error())
 	}
 
 	// Delay until the music is paused
 	time.Sleep(1 * time.Second)
 
 	// Restore initial volume
-	log.Printf("Restoring initial volume: %0.2f%%", status.initialVolume)
 	setVolume(status.initialVolume)
 
 	os.Exit(0)
@@ -115,42 +109,58 @@ func finishExecution(status Status) {
 
 func setVolume(volumePercent float64) {
 	volumeString := fmt.Sprintf("%f%%", volumePercent)
+	log.Printf("Setting volume to: %s", volumeString)
 
-	_, err := exec.Command("/usr/bin/amixer", "sset", "Master", volumeString).Output()
+	_, err := exec.Command("/usr/bin/amixer", "-D", "pulse", "set", "Master", volumeString).Output()
 
 	if err != nil {
-		log.Fatal(err)
+		log.Panic("Unable to set volume: " + err.Error())
 	}
 }
 
-func getCurrentVolume() float64 {
+// Get the average volume of the left and right channels
+func getAverageVolume() float64 {
 
 	out, err := exec.Command("/usr/bin/amixer", "get", "Master").Output()
 	if err != nil {
-		log.Fatal(err)
+		log.Panic("Unable to retrieve volume: " + err.Error())
 	}
 
 	// Amixer output looks like this:
 	// Simple mixer control 'Master',0
-	// Capabilities: pvolume pvolume-joined pswitch pswitch-joined
-	// Playback channels: Mono
-	// Limits: Playback 0 - 87
-	// Mono: Playback 87 [100%] [0.00dB] [on]
+  	// 	Capabilities: pvolume pswitch pswitch-joined
+  	// 	Playback channels: Front Left - Front Right
+  	// 	Limits: Playback 0 - 65536
+  	// 	Mono:
+  	// 	Front Left: Playback 39312 [60%] [on]
+  	// 	Front Right: Playback 39312 [60%] [on]
 
-	re := regexp.MustCompile(`Mono: Playback (\d+)`)
-	match := re.FindStringSubmatch(string(out))
-
-	if match != nil {
-		currentVolume, err := strconv.Atoi(match[1])
-
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		fmt.Println(currentVolume)
-		return float64(currentVolume)
+	left := regexp.MustCompile(`Front Left: Playback \d+ \[(\d+)%\]`)
+	matchLeft := left.FindStringSubmatch(string(out))
+	if matchLeft == nil {
+		log.Panic("Unable to find left channel volume")
 	}
 
-	log.Fatal("Unable to find current volume")
-	return float64(0)
+	right := regexp.MustCompile(`Front Right: Playback \d+ \[(\d+)%\]`)
+	matchRight := right.FindStringSubmatch(string(out))
+	if matchRight == nil {
+		log.Panic("Unable to find right channel volume")
+	}
+
+	leftVolume, err := strconv.Atoi(matchLeft[1])
+	log.Printf("Left channel volume: %d", leftVolume)
+	if err != nil {
+		log.Panic("Unable to parse left channel volume")
+	}
+
+	rightVolume, err := strconv.Atoi(matchRight[1])
+	log.Printf("Right channel volume: %d", rightVolume)
+	if err != nil {
+		log.Panic("Unable to parse right channel volume")
+	}
+
+	currentVolume := (leftVolume + rightVolume) / 2
+
+	log.Printf("Current volume: %d", currentVolume)
+	return float64(currentVolume)
 }
